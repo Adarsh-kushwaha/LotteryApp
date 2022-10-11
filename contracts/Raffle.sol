@@ -17,6 +17,11 @@ import "@chainlink/contracts/src/v0.8/AutomationCompatible.sol";
 error Raffle_NotEnoughEthEntered();
 error Rafffle_TransactionFailed();
 error Raffle_NotOpen();
+error Raffle_UpkeepNotNeeded(
+    uint256 currentBalance,
+    uint256 numPlayers,
+    uint256 raffleState
+);
 
 abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
     /* Type decleration */
@@ -39,6 +44,8 @@ abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
     //lottery variables
     address private s_recentWinner;
     RaffleState private s_raffleState;
+    uint256 private s_lastTimeStamp;
+    uint256 private immutable i_interval;
 
     /* Events */
     event raffleEnter(address indexed s_players);
@@ -50,7 +57,8 @@ abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         uint256 entranceFee,
         bytes32 gaslane,
         uint64 subscriptionId,
-        uint32 callBackGasLimit
+        uint32 callBackGasLimit,
+        uint256 interval
     ) VRFConsumerBaseV2(vrfCoordinatorV2) {
         i_entranceFee = entranceFee;
         i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
@@ -58,6 +66,8 @@ abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         i_subscriptionId = subscriptionId;
         i_callBackGasLimit = callBackGasLimit;
         s_raffleState = RaffleState.OPEN;
+        s_lastTimeStamp = block.timestamp;
+        i_interval = interval;
     }
 
     //enter raffle
@@ -66,7 +76,7 @@ abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
             revert Raffle_NotEnoughEthEntered();
         }
 
-        if(s_raffleState != RaffleState.OPEN){
+        if (s_raffleState != RaffleState.OPEN) {
             revert Raffle_NotOpen();
         }
 
@@ -90,23 +100,36 @@ abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
      * 4. Implicity, your subscription is funded with LINK.
      *
      */
-    function checkUpkeep(
-        bytes calldata /* checkData */
+    function checkUpkeep (
+        bytes memory /* checkData */
     )
         external
-        view
         override
         returns (
             bool upkeepNeeded,
-            bytes memory /* performData */
+            bytes memory /*performData */
         )
     {
-        //14.42.23
-        // We don't use the checkData in this example. The checkData is defined when the Upkeep was registered.
+        bool isOpen = (RaffleState.OPEN == s_raffleState);
+        bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
+        bool hasPlayers = (s_players.length > 0);
+        bool hasBalance = address(this).balance > 0;
+        upkeepNeeded = (isOpen && timePassed && hasBalance && hasPlayers);
+        return (upkeepNeeded, "0x0");
     }
 
     //pick the random participant
-    function requestRandomWinner() external {
+    function performUpkeep(
+        bytes calldata /* performData */
+    ) external override {
+        (bool upkeepNeeded, ) = checkUpkeep("");
+        if (!upkeepNeeded) {
+            revert Raffle_UpkeepNotNeeded(
+                address(this).balance,
+                s_players.length,
+                uint256(s_raffleState)
+            );
+        }
         //request the random number
         //perform this action in two transaction so no external factor can manipulate the result
         s_raffleState = RaffleState.CALCULATING;
@@ -131,6 +154,8 @@ abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         s_recentWinner = addressOfRecentWinner;
         s_raffleState = RaffleState.OPEN;
         s_players = new address payable[](0);
+
+        //transfer money to winner
         (bool success, ) = addressOfRecentWinner.call{
             value: address(this).balance
         }("");
@@ -143,5 +168,13 @@ abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 
     function getRecentWinner() public view returns (address) {
         return s_recentWinner;
+    }
+
+    function getRaffleState() public view returns (RaffleState) {
+        return s_raffleState;
+    }
+
+    function getNumWords() public view returns (uint256) {
+        return NUM_WORDS;
     }
 }
