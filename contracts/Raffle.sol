@@ -23,7 +23,7 @@ error Raffle_UpkeepNotNeeded(
     uint256 raffleState
 );
 
-abstract contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
+contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
     /* Type decleration */
     enum RaffleState {
         OPEN,
