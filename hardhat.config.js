@@ -22,7 +22,7 @@ module.exports = {
       chainId: 31337,
       blockConfirmations: 1
     },
-    goreli: {
+    goerli: {
       chainId: 5,
       blockConfirmations: 6,
       url: GORELI_RPC_URL,
